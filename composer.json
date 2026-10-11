@@ -1,0 +1,25 @@
+{
+    "name": "vergatan10/installation-laravel",
+    "description": "CodeCanyon-style web installer for any Laravel application: requirement check, database setup, migrate, seed, storage link, admin account, then auto-lock.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "installer", "web-installer", "setup", "wizard"],
+    "require": {
+        "php": "^8.1",
+        "illuminate/support": "^10.0|^11.0|^12.0|^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Vergatan10\\Installer\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Vergatan10\\Installer\\InstallerServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
