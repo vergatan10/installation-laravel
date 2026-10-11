@@ -1,31 +1,46 @@
 @extends('installer::layout')
 
 @section('content')
-    <h2>Administrator Account</h2>
-    <p class="intro">This account will be created after the database is installed. Use it to log in.</p>
+    <h2>{{ config('installer.admin.title', 'Administrator Account') }}</h2>
+    <p class="intro">{{ config('installer.admin.description') }}</p>
 
     <form method="POST" action="{{ route('installer.admin.save') }}">
         @csrf
         <div class="grid">
-            <div class="full">
-                <label for="name">Name</label>
-                <input id="name" name="name" value="{{ old('name', $values['name'] ?? '') }}" required>
-                @error('name')<div class="field-error">{{ $message }}</div>@enderror
-            </div>
-            <div class="full">
-                <label for="email">Email</label>
-                <input id="email" type="email" name="email" value="{{ old('email', $values['email'] ?? '') }}" required>
-                @error('email')<div class="field-error">{{ $message }}</div>@enderror
-            </div>
-            <div>
-                <label for="password">Password</label>
-                <input id="password" type="password" name="password" minlength="8" required autocomplete="new-password">
-                @error('password')<div class="field-error">{{ $message }}</div>@enderror
-            </div>
-            <div>
-                <label for="password_confirmation">Confirm Password</label>
-                <input id="password_confirmation" type="password" name="password_confirmation" minlength="8" required autocomplete="new-password">
-            </div>
+            @foreach ($fields as $key => $field)
+                @php
+                    $rules = is_array($field['rules']) ? $field['rules'] : explode('|', $field['rules']);
+                    $required = in_array('required', $rules, true);
+                    $confirmed = in_array('confirmed', $rules, true);
+                    $isPassword = $field['type'] === 'password';
+                @endphp
+
+                <div class="{{ $confirmed ? '' : 'full' }}">
+                    <label for="{{ $key }}">{{ $field['label'] }}</label>
+                    @if ($field['type'] === 'select')
+                        <select id="{{ $key }}" name="{{ $key }}" @required($required)>
+                            @foreach ($field['options'] ?? [] as $value => $label)
+                                <option value="{{ $value }}" @selected((string) old($key, $values[$key]) === (string) $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    @else
+                        <input id="{{ $key }}" type="{{ $field['type'] }}" name="{{ $key }}"
+                               value="{{ $isPassword ? '' : old($key, $values[$key]) }}"
+                               @required($required)
+                               @if ($isPassword) autocomplete="new-password" @endif>
+                    @endif
+                    @if (! empty($field['hint']))<div class="hint">{{ $field['hint'] }}</div>@endif
+                    @error($key)<div class="field-error">{{ $message }}</div>@enderror
+                </div>
+
+                @if ($confirmed)
+                    <div>
+                        <label for="{{ $key }}_confirmation">Confirm {{ $field['label'] }}</label>
+                        <input id="{{ $key }}_confirmation" type="{{ $field['type'] }}" name="{{ $key }}_confirmation"
+                               @required($required) @if ($isPassword) autocomplete="new-password" @endif>
+                    </div>
+                @endif
+            @endforeach
         </div>
 
         <div class="actions">

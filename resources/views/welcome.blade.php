@@ -9,7 +9,7 @@
         <div class="row">An empty database (MySQL / MariaDB / PostgreSQL / SQL Server) or use SQLite</div>
         <div class="row">The database host, port, name, username and password</div>
         @if (config('installer.admin.enabled'))
-            <div class="row">The name, email and password for the administrator account</div>
+            <div class="row">The details for the {{ strtolower(config('installer.admin.title', 'Administrator Account')) }} ({{ strtolower(implode(', ', array_column(config('installer.admin.fields', []), 'label'))) }})</div>
         @endif
     </div>
 

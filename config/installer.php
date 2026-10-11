@@ -109,16 +109,61 @@ return [
     |--------------------------------------------------------------------------
     | Administrator account
     |--------------------------------------------------------------------------
-    | When enabled, the wizard asks for an admin name/email/password and
-    | creates (or updates) that user after migrations & seeders ran.
+    | When enabled, the wizard shows an account page right after the database
+    | step and creates (or updates) that user after migrations & seeders ran.
+    | See README "Akun Super Admin" for examples.
     */
     'admin' => [
         'enabled' => true,
+
+        // Texts shown on the account page and in the stepper.
+        'title' => 'Administrator Account',
+        'description' => 'This account will be created after the database is installed. Use it to log in.',
+        'step_label' => 'Admin',
+
         'model' => 'App\\Models\\User',
+
+        // Column used to find an existing user (re-running the installer
+        // updates that user instead of creating a duplicate).
+        'identifier' => 'email',
+
+        // Form fields. Key = input name (and model column unless 'column' says otherwise).
+        //   label    : field label
+        //   type     : text | email | password | tel | number | select
+        //   rules    : Laravel validation rules ('confirmed' adds a "Confirm ..." input)
+        //   options  : for type=select, ['value' => 'Label']
+        //   hint     : small help text under the field
+        //   column   : model column to save to, or false to only pass it to the callback
+        //   default  : prefilled value
+        // Password fields are hashed automatically.
+        'fields' => [
+            'name' => [
+                'label' => 'Full Name',
+                'type' => 'text',
+                'rules' => 'required|string|max:255',
+            ],
+            'email' => [
+                'label' => 'Email',
+                'type' => 'email',
+                'rules' => 'required|email|max:255',
+            ],
+            'password' => [
+                'label' => 'Password',
+                'type' => 'password',
+                'rules' => 'required|string|min:8|confirmed',
+            ],
+        ],
+
         // Extra columns forced onto the admin user, e.g. ['is_admin' => true]
         'attributes' => [],
+
         // Role name assigned via ->assignRole() (spatie/laravel-permission), or null
         'role' => null,
+
+        // Invokable class called after the user is saved, for anything custom:
+        //   public function __invoke($user, array $data): void
+        // $data holds all submitted field values (passwords already hashed).
+        'callback' => null,
     ],
 
 ];

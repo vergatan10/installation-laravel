@@ -157,9 +157,18 @@ class InstallerController extends Controller
             return $redirect;
         }
 
+        $fields = $this->adminFields();
+        $saved = session('installer.admin', []);
+        $values = [];
+
+        foreach ($fields as $key => $field) {
+            $values[$key] = $field['type'] === 'password' ? '' : ($saved[$key] ?? $field['default'] ?? '');
+        }
+
         return view('installer::admin', [
             'step' => 'admin',
-            'values' => session('installer.admin', []),
+            'fields' => $fields,
+            'values' => $values,
         ]);
     }
 
@@ -169,17 +178,21 @@ class InstallerController extends Controller
             return $redirect;
         }
 
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
-        ]);
+        $fields = $this->adminFields();
 
-        session(['installer.admin' => [
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-        ]]);
+        $data = $request->validate(
+            array_map(fn ($field) => $field['rules'] ?? 'nullable', $fields),
+            [],
+            array_map(fn ($field) => strtolower($field['label']), $fields),
+        );
+
+        foreach ($fields as $key => $field) {
+            if ($field['type'] === 'password' && isset($data[$key]) && $data[$key] !== '') {
+                $data[$key] = Hash::make($data[$key]);
+            }
+        }
+
+        session(['installer.admin' => array_intersect_key($data, $fields)]);
         $this->markDone('admin');
 
         return redirect()->route('installer.run');
@@ -237,7 +250,7 @@ class InstallerController extends Controller
             'migrate' => config('installer.migrate') ? 'Running database migrations' : null,
             'seed' => config('installer.seed') ? 'Seeding the database' : null,
             'storage' => config('installer.storage_link') ? 'Creating storage link' : null,
-            'admin' => config('installer.admin.enabled') ? 'Creating administrator account' : null,
+            'admin' => config('installer.admin.enabled') ? 'Creating '.strtolower(config('installer.admin.title', 'Administrator Account')) : null,
             'commands' => config('installer.commands') ? 'Running post-install commands' : null,
             'optimize' => 'Clearing caches',
             'finish' => 'Finishing installation',
@@ -316,21 +329,41 @@ class InstallerController extends Controller
             return ['error', 'Administrator data is missing, please go back to the admin step.'];
         }
 
-        $modelClass = config('installer.admin.model');
-        $user = $modelClass::query()->firstOrNew(['email' => $data['email']]);
-        $attributes = ['name' => $data['name'], 'email' => $data['email'], 'password' => $data['password']];
+        $attributes = [];
 
-        if (Schema::hasColumn($user->getTable(), 'email_verified_at')) {
-            $attributes['email_verified_at'] = now();
+        foreach ($this->adminFields() as $key => $field) {
+            $column = $field['column'] ?? $key;
+
+            if ($column !== false && array_key_exists($key, $data)) {
+                $attributes[$column] = $data[$key];
+            }
         }
 
-        $user->forceFill(array_merge($attributes, config('installer.admin.attributes', [])))->save();
+        $attributes = array_merge($attributes, config('installer.admin.attributes', []));
+        $identifier = config('installer.admin.identifier', 'email');
+
+        if (! isset($attributes[$identifier])) {
+            return ['error', "Admin identifier column [{$identifier}] is not one of the admin fields."];
+        }
+
+        $modelClass = config('installer.admin.model');
+        $user = $modelClass::query()->firstOrNew([$identifier => $attributes[$identifier]]);
+
+        if (Schema::hasColumn($user->getTable(), 'email_verified_at')) {
+            $attributes['email_verified_at'] ??= now();
+        }
+
+        $user->forceFill($attributes)->save();
 
         if (($role = config('installer.admin.role')) && method_exists($user, 'assignRole')) {
             $user->assignRole($role);
         }
 
-        return ['ok', 'Administrator '.$data['email'].' is ready.'];
+        if ($callback = config('installer.admin.callback')) {
+            app($callback)($user, $data);
+        }
+
+        return ['ok', config('installer.admin.title', 'Administrator').' '.$attributes[$identifier].' is ready.'];
     }
 
     protected function taskCommands(): array
@@ -404,6 +437,21 @@ class InstallerController extends Controller
             'username' => $input['username'],
             'password' => $input['password'] ?? '',
         ];
+    }
+
+    protected function adminFields(): array
+    {
+        $fields = [];
+
+        foreach (config('installer.admin.fields', []) as $key => $field) {
+            $fields[$key] = array_merge([
+                'label' => ucwords(str_replace('_', ' ', $key)),
+                'type' => 'text',
+                'rules' => 'nullable',
+            ], $field);
+        }
+
+        return $fields;
     }
 
     protected function env(): EnvironmentManager

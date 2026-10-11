@@ -9,7 +9,7 @@ Upload script → buka URL → installer muncul otomatis → selesai.
 2. **Requirements**: cek versi PHP & extension
 3. **Permissions**: cek folder `storage`, `bootstrap/cache` dan `.env` bisa ditulis
 4. **Database**: isi nama/URL aplikasi + data database → **Test Connection** (tombol lanjut baru aktif setelah koneksi berhasil)
-5. **Admin**: buat akun administrator (bisa dimatikan)
+5. **Admin / Super Admin**: form akun admin, field-nya bisa diatur sendiri (lihat [Akun Super Admin](#akun-super-admin)), atau dimatikan
 6. **Install**: otomatis menjalankan:
    - menulis `.env` (APP_NAME, APP_URL, APP_ENV, APP_DEBUG, DB_*)
    - `APP_KEY` (dibuat otomatis saat pertama kali dibuka)
@@ -105,12 +105,104 @@ Opsi penting di `config/installer.php`:
 | `migrate`, `seed`, `seeder` | Jalankan migrate/seed, dan seeder khusus |
 | `storage_link` | Jalankan `storage:link` |
 | `commands` | Perintah artisan tambahan, contoh `['permission:cache-reset', 'app:setup' => ['--force' => true]]` |
-| `admin.enabled` | Tampilkan langkah buat admin |
-| `admin.model` | Model user (default `App\Models\User`) |
-| `admin.attributes` | Kolom tambahan, contoh `['is_admin' => true, 'role' => 'admin']` |
-| `admin.role` | Nama role untuk spatie/laravel-permission (`assignRole`) |
+| `admin.*` | Halaman akun admin, lihat [Akun Super Admin](#akun-super-admin) |
 | `redirect_after_install`, `login_url` | Tujuan tombol di halaman selesai |
 | `except` | Path yang tidak di-redirect ke installer sebelum terinstall (misal `api/*`) |
+
+## Akun Super Admin
+
+Setelah **Test Connection** berhasil dan data database disimpan, installer menampilkan halaman pembuatan akun admin.
+Data yang diisi disimpan dulu di session, lalu akunnya dibuat pada tahap **Install** (setelah migrate & seed),
+jadi tabel `users` sudah pasti ada. Setelah instalasi selesai, halaman ini ikut terkunci bersama seluruh installer.
+
+Semua diatur di bagian `admin` pada `config/installer.php` (publish dulu dengan `--tag=installer-config`).
+
+| Opsi | Fungsi |
+|---|---|
+| `enabled` | `false` = langkah admin dilewati (langsung ke Install) |
+| `title`, `description`, `step_label` | Judul halaman, keterangan, dan label di stepper |
+| `model` | Model user (default `App\Models\User`) |
+| `identifier` | Kolom untuk mencari user yang sudah ada (default `email`). Kalau installer dijalankan ulang, user ini di-update, bukan dibuat dobel |
+| `fields` | Daftar field di form (lihat di bawah) |
+| `attributes` | Kolom tetap yang dipaksa ke user, contoh `['is_admin' => true, 'status' => 'active']` |
+| `role` | Nama role untuk spatie/laravel-permission (`$user->assignRole()`) |
+| `callback` | Class invokable yang dipanggil setelah user disimpan, untuk logika custom |
+
+### Format `fields`
+
+Key = nama input sekaligus nama kolom di tabel (kecuali diatur lain lewat `column`).
+
+| Properti | Keterangan |
+|---|---|
+| `label` | Label field |
+| `type` | `text`, `email`, `password`, `tel`, `number`, atau `select` |
+| `rules` | Aturan validasi Laravel. `confirmed` otomatis menampilkan input "Confirm ..." |
+| `options` | Untuk `select`: `['value' => 'Label']` |
+| `default` | Nilai awal |
+| `hint` | Teks bantuan kecil di bawah field |
+| `column` | Nama kolom tujuan jika berbeda dari key, atau `false` = tidak disimpan ke tabel (hanya dikirim ke `callback`) |
+
+Field bertipe `password` otomatis di-hash (bcrypt).
+
+### Contoh: Super Admin dengan username
+
+```php
+'admin' => [
+    'enabled' => true,
+    'title' => 'Super Admin',
+    'description' => 'Akun ini memiliki akses penuh ke aplikasi.',
+    'step_label' => 'Super Admin',
+    'model' => App\Models\User::class,
+    'identifier' => 'username',
+
+    'fields' => [
+        'name'     => ['label' => 'Nama Lengkap', 'rules' => 'required|string|max:255'],
+        'username' => ['label' => 'Username', 'rules' => 'required|alpha_dash|max:50', 'hint' => 'Dipakai untuk login'],
+        'email'    => ['label' => 'Email', 'type' => 'email', 'rules' => 'required|email|max:255'],
+        'phone'    => ['label' => 'No. HP', 'type' => 'tel', 'rules' => 'nullable|string|max:20'],
+        'password' => ['label' => 'Password', 'type' => 'password', 'rules' => 'required|string|min:8|confirmed'],
+    ],
+
+    'attributes' => ['is_superadmin' => true],
+    'role' => 'super-admin',
+    'callback' => null,
+],
+```
+
+> Kolom seperti `username`, `phone`, `is_superadmin` harus sudah ada di tabel `users` (buat lewat migration project Anda).
+
+### Contoh: callback untuk logika custom
+
+Cocok untuk kebutuhan seperti membuat data profil, menyimpan ke tabel lain, atau mengisi setting awal:
+
+```php
+// config/installer.php
+'callback' => App\Installer\SetupSuperAdmin::class,
+
+'fields' => [
+    // ...
+    'company' => ['label' => 'Nama Perusahaan', 'rules' => 'required|string', 'column' => false],
+],
+```
+
+```php
+// app/Installer/SetupSuperAdmin.php
+namespace App\Installer;
+
+class SetupSuperAdmin
+{
+    public function __invoke($user, array $data): void
+    {
+        // $data berisi semua input form (password sudah di-hash)
+        \App\Models\Setting::updateOrCreate(['key' => 'company_name'], ['value' => $data['company']]);
+        $user->profile()->create(['position' => 'Owner']);
+    }
+}
+```
+
+### Tanpa akun admin
+
+Set `'enabled' => false`. Alurnya jadi Database → Install, dan Anda bisa membuat admin lewat seeder sendiri.
 
 ## Perintah artisan
 

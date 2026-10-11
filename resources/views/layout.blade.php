@@ -73,7 +73,7 @@
             'requirements' => 'Requirements',
             'permissions' => 'Permissions',
             'database' => 'Database',
-            'admin' => config('installer.admin.enabled') ? 'Admin' : null,
+            'admin' => config('installer.admin.enabled') ? config('installer.admin.step_label', 'Admin') : null,
             'run' => 'Install',
         ]);
         $keys = array_keys($steps);
