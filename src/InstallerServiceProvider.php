@@ -24,6 +24,7 @@ class InstallerServiceProvider extends ServiceProvider
     public function boot(Router $router): void
     {
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'installer');
+        $this->loadTranslationsFrom(__DIR__.'/../lang', 'installer');
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
 
         if (! Installer::isInstalled()) {
@@ -40,6 +41,10 @@ class InstallerServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__.'/../resources/views' => resource_path('views/vendor/installer'),
             ], 'installer-views');
+
+            $this->publishes([
+                __DIR__.'/../lang' => $this->app->langPath('vendor/installer'),
+            ], 'installer-lang');
         }
     }
 
@@ -51,6 +56,12 @@ class InstallerServiceProvider extends ServiceProvider
     {
         $env = new EnvironmentManager($this->app->environmentFilePath());
         $env->ensureExists(base_path('.env.example'));
+
+        // On the very first request .env did not exist yet when it was loaded,
+        // so read the installer key straight from the (new) file.
+        if (empty(config('installer.access_key')) && ($accessKey = $env->get('INSTALLER_KEY'))) {
+            config(['installer.access_key' => $accessKey]);
+        }
 
         if (empty(config('app.key'))) {
             $key = $env->get('APP_KEY');

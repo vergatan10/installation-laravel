@@ -56,6 +56,9 @@
         .btn.secondary:hover { background: #e2e5ee; }
         .btn[disabled], .btn.disabled { opacity: .5; pointer-events: none; }
         pre.log { background: #0f172a; color: #cbd5e1; padding: 14px; border-radius: 8px; max-height: 260px; overflow: auto; font-size: 12px; white-space: pre-wrap; margin: 0; }
+        .lang { margin-top: 10px; font-size: 13px; }
+        .lang a { color: var(--muted); text-decoration: none; margin: 0 6px; }
+        .lang a.active { color: var(--primary); font-weight: 600; }
         .footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 20px; }
         @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } .steps li { font-size: 0; } .card { padding: 20px; } }
     </style>
@@ -64,18 +67,18 @@
 <div class="wrap">
     <div class="brand">
         <h1>{{ config('app.name', 'Laravel') }}</h1>
-        <p>Installation Wizard</p>
+        <p>{{ __('installer::installer.wizard') }}</p>
+        @if (count(config('installer.locales', [])) > 1)
+            <div class="lang">
+                @foreach (config('installer.locales') as $code => $name)
+                    <a href="{{ route('installer.language', $code) }}" class="{{ app()->getLocale() === $code ? 'active' : '' }}">{{ $name }}</a>
+                @endforeach
+            </div>
+        @endif
     </div>
 
     @php
-        $steps = array_filter([
-            'welcome' => 'Welcome',
-            'requirements' => 'Requirements',
-            'permissions' => 'Permissions',
-            'database' => 'Database',
-            'admin' => config('installer.admin.enabled') ? config('installer.admin.step_label', 'Admin') : null,
-            'run' => 'Install',
-        ]);
+        $steps = \Vergatan10\Installer\Support\Installer::stepLabels();
         $keys = array_keys($steps);
         $current = array_search($step ?? 'welcome', $keys);
     @endphp

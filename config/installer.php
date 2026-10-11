@@ -12,6 +12,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Language
+    |--------------------------------------------------------------------------
+    | Default installer language and the languages offered in the switcher
+    | (the switcher is hidden when only one language is listed).
+    | Bundled translations: en, id. Publish with --tag=installer-lang to edit.
+    */
+    'locale' => 'en',
+    'locales' => [
+        'en' => 'English',
+        'id' => 'Bahasa Indonesia',
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Installer key (optional)
+    |--------------------------------------------------------------------------
+    | When set, the installer asks for this key before anything else, so a
+    | stranger cannot install a freshly uploaded copy. Leave empty to disable.
+    | Usually set via INSTALLER_KEY in .env.example (read even before .env exists).
+    */
+    'access_key' => env('INSTALLER_KEY'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Lock file
     |--------------------------------------------------------------------------
     | Written to storage/ when installation finishes. While it exists the
@@ -107,29 +131,65 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Extra .env settings (optional page)
+    |--------------------------------------------------------------------------
+    | APP_* and DB_* are always asked on the Database page. Add groups here for
+    | anything else your app needs in .env (mail, payment gateway, API keys...).
+    | When 'groups' is empty the Settings page is skipped entirely.
+    |
+    | Each field key is the .env variable name. Field options:
+    |   label, type (text|email|password|number|url|tel|select|boolean),
+    |   rules, options (for select), default, hint
+    | Prefilled from the current .env (e.g. values from .env.example).
+    | Labels/titles may be plain text or translation keys.
+    */
+    'settings' => [
+        'title' => null,        // null = translated "Settings"
+        'description' => null,
+        'step_label' => null,
+
+        'groups' => [
+            // 'mail' => [
+            //     'title' => 'Email (SMTP)',
+            //     'description' => 'Used to send password resets and notifications.',
+            //     'fields' => [
+            //         'MAIL_MAILER' => ['label' => 'Mailer', 'type' => 'select', 'options' => ['smtp' => 'SMTP', 'log' => 'Log (do not send)'], 'default' => 'smtp', 'rules' => 'required'],
+            //         'MAIL_HOST' => ['label' => 'SMTP Host', 'rules' => 'nullable|string'],
+            //         'MAIL_PORT' => ['label' => 'SMTP Port', 'type' => 'number', 'default' => 587, 'rules' => 'nullable|integer'],
+            //         'MAIL_USERNAME' => ['label' => 'SMTP Username', 'rules' => 'nullable|string'],
+            //         'MAIL_PASSWORD' => ['label' => 'SMTP Password', 'type' => 'password', 'rules' => 'nullable|string'],
+            //         'MAIL_FROM_ADDRESS' => ['label' => 'From Address', 'type' => 'email', 'rules' => 'nullable|email'],
+            //     ],
+            // ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Administrator account
     |--------------------------------------------------------------------------
-    | When enabled, the wizard shows an account page right after the database
-    | step and creates (or updates) that user after migrations & seeders ran.
+    | When enabled, the wizard shows an account page and creates (or updates)
+    | that user after migrations & seeders ran.
     | See README "Akun Super Admin" for examples.
     */
     'admin' => [
         'enabled' => true,
 
-        // Texts shown on the account page and in the stepper.
-        'title' => 'Administrator Account',
-        'description' => 'This account will be created after the database is installed. Use it to log in.',
-        'step_label' => 'Admin',
+        // Texts shown on the account page and in the stepper
+        // (null = translated default). Plain text or translation keys.
+        'title' => null,
+        'description' => null,
+        'step_label' => null,
 
-        'model' => 'App\\Models\\User',
+        'model' => 'App\Models\User',
 
         // Column used to find an existing user (re-running the installer
         // updates that user instead of creating a duplicate).
         'identifier' => 'email',
 
         // Form fields. Key = input name (and model column unless 'column' says otherwise).
-        //   label    : field label
-        //   type     : text | email | password | tel | number | select
+        //   label    : field label (plain text or translation key)
+        //   type     : text | email | password | tel | number | url | select
         //   rules    : Laravel validation rules ('confirmed' adds a "Confirm ..." input)
         //   options  : for type=select, ['value' => 'Label']
         //   hint     : small help text under the field
@@ -138,17 +198,17 @@ return [
         // Password fields are hashed automatically.
         'fields' => [
             'name' => [
-                'label' => 'Full Name',
+                'label' => 'installer::installer.admin.name',
                 'type' => 'text',
                 'rules' => 'required|string|max:255',
             ],
             'email' => [
-                'label' => 'Email',
+                'label' => 'installer::installer.admin.email',
                 'type' => 'email',
                 'rules' => 'required|email|max:255',
             ],
             'password' => [
-                'label' => 'Password',
+                'label' => 'installer::installer.admin.password',
                 'type' => 'password',
                 'rules' => 'required|string|min:8|confirmed',
             ],

@@ -1,11 +1,11 @@
 @extends('installer::layout')
 
 @section('content')
-    <h2>Application &amp; Database</h2>
-    <p class="intro">Create an empty database in your hosting panel (cPanel, Plesk, etc.), then enter its details below and click <strong>Test Connection</strong>.</p>
+    <h2>{{ __('installer::installer.database.title') }}</h2>
+    <p class="intro">{{ __('installer::installer.database.intro') }}</p>
 
     @if ($errors->any())
-        <div class="alert err">{{ $errors->first('connection') ?: 'Please check the form for errors.' }}</div>
+        <div class="alert err">{{ $errors->first('connection') ?: __('installer::installer.common.form_errors') }}</div>
     @endif
     <div id="test-result" class="alert" style="display:none"></div>
 
@@ -13,39 +13,39 @@
         @csrf
 
         <fieldset>
-            <legend>Application</legend>
+            <legend>{{ __('installer::installer.database.application') }}</legend>
             <div class="grid">
                 <div>
-                    <label for="app_name">App Name</label>
+                    <label for="app_name">{{ __('installer::installer.database.app_name') }}</label>
                     <input id="app_name" name="app_name" value="{{ old('app_name', $values['app_name']) }}" required>
                     @error('app_name')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
                 <div>
-                    <label for="app_url">App URL</label>
+                    <label for="app_url">{{ __('installer::installer.database.app_url') }}</label>
                     <input id="app_url" type="url" name="app_url" value="{{ old('app_url', $values['app_url']) }}" required>
                     @error('app_url')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
                 <div>
-                    <label for="app_env">Environment</label>
+                    <label for="app_env">{{ __('installer::installer.database.environment') }}</label>
                     <select id="app_env" name="app_env">
-                        @foreach (['production' => 'Production', 'staging' => 'Staging', 'local' => 'Local / Development'] as $key => $label)
+                        @foreach (['production' => __('installer::installer.database.env_production'), 'staging' => __('installer::installer.database.env_staging'), 'local' => __('installer::installer.database.env_local')] as $key => $label)
                             <option value="{{ $key }}" @selected(old('app_env', $values['app_env']) === $key)>{{ $label }}</option>
                         @endforeach
                     </select>
                 </div>
                 <div>
                     <label>&nbsp;</label>
-                    <label class="check"><input type="checkbox" name="app_debug" value="1" @checked(old('app_debug', $values['app_debug']))> Enable debug mode</label>
-                    <div class="hint">Keep this off on a live website.</div>
+                    <label class="check"><input type="checkbox" name="app_debug" value="1" @checked(old('app_debug', $values['app_debug']))> {{ __('installer::installer.database.debug') }}</label>
+                    <div class="hint">{{ __('installer::installer.database.debug_hint') }}</div>
                 </div>
             </div>
         </fieldset>
 
         <fieldset>
-            <legend>Database</legend>
+            <legend>{{ __('installer::installer.database.database') }}</legend>
             <div class="grid">
                 <div class="full">
-                    <label for="connection">Database Type</label>
+                    <label for="connection">{{ __('installer::installer.database.type') }}</label>
                     <select id="connection" name="connection" data-db>
                         @foreach ($drivers as $key => $label)
                             <option value="{{ $key }}" @selected(old('connection', $values['connection']) === $key)>{{ $label }}</option>
@@ -54,34 +54,34 @@
                 </div>
 
                 <div class="full" data-sqlite>
-                    <label for="sqlite_path">SQLite File Path</label>
+                    <label for="sqlite_path">{{ __('installer::installer.database.sqlite_path') }}</label>
                     <input id="sqlite_path" name="sqlite_path" value="{{ old('sqlite_path', $values['sqlite_path']) }}" data-db>
-                    <div class="hint">The file will be created if it does not exist.</div>
+                    <div class="hint">{{ __('installer::installer.database.sqlite_hint') }}</div>
                     @error('sqlite_path')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
 
                 <div data-server>
-                    <label for="host">Host</label>
+                    <label for="host">{{ __('installer::installer.database.host') }}</label>
                     <input id="host" name="host" value="{{ old('host', $values['host']) }}" data-db>
                     @error('host')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
                 <div data-server>
-                    <label for="port">Port</label>
+                    <label for="port">{{ __('installer::installer.database.port') }}</label>
                     <input id="port" name="port" value="{{ old('port', $values['port']) }}" data-db>
                     @error('port')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
                 <div class="full" data-server>
-                    <label for="database">Database Name</label>
+                    <label for="database">{{ __('installer::installer.database.name') }}</label>
                     <input id="database" name="database" value="{{ old('database', $values['database']) }}" data-db>
                     @error('database')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
                 <div data-server>
-                    <label for="username">Username</label>
+                    <label for="username">{{ __('installer::installer.database.username') }}</label>
                     <input id="username" name="username" value="{{ old('username', $values['username']) }}" data-db autocomplete="off">
                     @error('username')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
                 <div data-server>
-                    <label for="password">Password</label>
+                    <label for="password">{{ __('installer::installer.database.password') }}</label>
                     <input id="password" type="password" name="password" value="" data-db autocomplete="new-password">
                     @error('password')<div class="field-error">{{ $message }}</div>@enderror
                 </div>
@@ -89,10 +89,10 @@
         </fieldset>
 
         <div class="actions">
-            <a href="{{ route('installer.permissions') }}" class="btn secondary">&larr; Back</a>
+            <a href="{{ $back }}" class="btn secondary">&larr; {{ __('installer::installer.common.back') }}</a>
             <span>
-                <button type="button" class="btn secondary" id="btn-test">Test Connection</button>
-                <button type="submit" class="btn" id="btn-save" disabled>Save &amp; Continue &rarr;</button>
+                <button type="button" class="btn secondary" id="btn-test">{{ __('installer::installer.database.test') }}</button>
+                <button type="submit" class="btn" id="btn-save" disabled>{{ __('installer::installer.database.save') }} &rarr;</button>
             </span>
         </div>
     </form>
@@ -107,6 +107,7 @@
     var btnTest = document.getElementById('btn-test');
     var btnSave = document.getElementById('btn-save');
     var result = document.getElementById('test-result');
+    var i18n = @json(['test' => __('installer::installer.database.test'), 'testing' => __('installer::installer.database.testing'), 'failed' => __('installer::installer.database.request_failed')]);
     var ports = { mysql: '3306', mariadb: '3306', pgsql: '5432', sqlsrv: '1433' };
 
     function toggle() {
@@ -139,7 +140,7 @@
 
     btnTest.addEventListener('click', function () {
         btnTest.disabled = true;
-        btnTest.textContent = 'Testing...';
+        btnTest.textContent = i18n.testing;
 
         fetch(@json(route('installer.database.test')), {
             method: 'POST',
@@ -155,8 +156,8 @@
                 btnSave.disabled = !r.data.ok;
             }
         })
-        .catch(function (e) { show(false, 'Request failed: ' + e.message); })
-        .finally(function () { btnTest.disabled = false; btnTest.textContent = 'Test Connection'; });
+        .catch(function (e) { show(false, i18n.failed.replace(':error', e.message)); })
+        .finally(function () { btnTest.disabled = false; btnTest.textContent = i18n.test; });
     });
 
     toggle();

@@ -12,6 +12,8 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Lang;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Throwable;
@@ -26,29 +28,77 @@ class InstallerController extends Controller
 
     public function welcome()
     {
-        return view('installer::welcome', ['step' => 'welcome']);
+        return view('installer::welcome', [
+            'step' => 'welcome',
+            'needsKey' => Installer::accessKey() && empty(session('installer.done.access')),
+            'next' => $this->nextUrl('access'),
+        ]);
+    }
+
+    public function access(Request $request): RedirectResponse
+    {
+        if (! Installer::accessKey()) {
+            return redirect()->route('installer.requirements');
+        }
+
+        $throttle = 'installer-access:'.$request->ip();
+
+        if (RateLimiter::tooManyAttempts($throttle, 5)) {
+            return back()->withErrors(['access_key' => __('installer::installer.access.throttled', [
+                'seconds' => RateLimiter::availableIn($throttle),
+            ])]);
+        }
+
+        $request->validate(['access_key' => ['required', 'string']], $this->validationMessages(), [
+            'access_key' => strtolower(__('installer::installer.access.label')),
+        ]);
+
+        if (! hash_equals(Installer::accessKey(), (string) $request->input('access_key'))) {
+            RateLimiter::hit($throttle, 60);
+
+            return back()->withErrors(['access_key' => __('installer::installer.access.invalid')]);
+        }
+
+        RateLimiter::clear($throttle);
+        $request->session()->regenerate();
+        $this->markDone('access');
+
+        return redirect()->route('installer.requirements');
+    }
+
+    public function language(Request $request, string $locale): RedirectResponse
+    {
+        if (array_key_exists($locale, config('installer.locales', []))) {
+            $request->session()->put('installer.locale', $locale);
+        }
+
+        return back(302, [], route('installer.welcome'));
     }
 
     public function requirements()
     {
+        if ($redirect = $this->guard('requirements')) {
+            return $redirect;
+        }
+
         $items = $this->checker->requirements();
         $passes = ServerChecker::passes($items);
         $this->markDone('requirements', $passes);
 
         return view('installer::check', [
             'step' => 'requirements',
-            'title' => 'Server Requirements',
-            'intro' => 'Your server must meet the following requirements.',
+            'title' => __('installer::installer.requirements.title'),
+            'intro' => __('installer::installer.requirements.intro'),
             'items' => $items,
             'passes' => $passes,
-            'next' => route('installer.permissions'),
+            'next' => $this->nextUrl('requirements'),
             'back' => route('installer.welcome'),
         ]);
     }
 
     public function permissions()
     {
-        if ($redirect = $this->guard('requirements')) {
+        if ($redirect = $this->guard('permissions')) {
             return $redirect;
         }
 
@@ -58,18 +108,18 @@ class InstallerController extends Controller
 
         return view('installer::check', [
             'step' => 'permissions',
-            'title' => 'Folder Permissions',
-            'intro' => 'These files and folders must be writable by the web server (usually 775 for folders, 664 for files).',
+            'title' => __('installer::installer.permissions.title'),
+            'intro' => __('installer::installer.permissions.intro'),
             'items' => $items,
             'passes' => $passes,
-            'next' => route('installer.database'),
-            'back' => route('installer.requirements'),
+            'next' => $this->nextUrl('permissions'),
+            'back' => $this->previousUrl('permissions'),
         ]);
     }
 
     public function database(Request $request)
     {
-        if ($redirect = $this->guard('permissions')) {
+        if ($redirect = $this->guard('database')) {
             return $redirect;
         }
 
@@ -78,6 +128,7 @@ class InstallerController extends Controller
         return view('installer::database', [
             'step' => 'database',
             'drivers' => config('installer.database_drivers'),
+            'back' => $this->previousUrl('database'),
             'values' => array_merge([
                 'app_name' => config('app.name', 'Laravel'),
                 'app_url' => $request->root(),
@@ -96,37 +147,39 @@ class InstallerController extends Controller
 
     public function testDatabase(Request $request): JsonResponse
     {
-        if ($this->guard('permissions')) {
-            return response()->json(['ok' => false, 'message' => 'Please complete the previous steps first.'], 422);
+        if ($this->guard('database')) {
+            return response()->json(['ok' => false, 'message' => __('installer::installer.common.previous_steps')], 422);
         }
 
-        $data = $this->normalizeDatabase($request->validate($this->databaseRules($request)));
+        $data = $this->normalizeDatabase($this->validateDatabase($request));
         $error = $this->database->test($data);
 
         return response()->json([
             'ok' => $error === null,
-            'message' => $error ?? 'Connection successful!',
+            'message' => $error ?? __('installer::installer.database.connected'),
         ]);
     }
 
     public function saveDatabase(Request $request): RedirectResponse
     {
-        if ($redirect = $this->guard('permissions')) {
+        if ($redirect = $this->guard('database')) {
             return $redirect;
         }
 
-        $input = $request->validate(array_merge($this->databaseRules($request), [
+        $input = $this->validateDatabase($request, [
             'app_name' => ['required', 'string', 'max:100'],
             'app_url' => ['required', 'url'],
             'app_env' => ['required', Rule::in(['production', 'local', 'staging'])],
             'app_debug' => ['nullable', 'boolean'],
-        ]));
+        ]);
         $input['app_debug'] = $request->boolean('app_debug');
 
         $data = $this->normalizeDatabase($input);
 
         if ($error = $this->database->test($data)) {
-            return back()->withInput()->withErrors(['connection' => 'Could not connect to the database: '.$error]);
+            return back()->withInput()->withErrors([
+                'connection' => __('installer::installer.database.connect_failed', ['error' => $error]),
+            ]);
         }
 
         $written = $this->env()->set(array_merge([
@@ -135,7 +188,7 @@ class InstallerController extends Controller
         ], $this->database->envValues($data)));
 
         if (! $written) {
-            return back()->withInput()->withErrors(['connection' => 'The .env file is not writable.']);
+            return back()->withInput()->withErrors(['connection' => __('installer::installer.common.env_not_writable')]);
         }
 
         session([
@@ -144,20 +197,89 @@ class InstallerController extends Controller
         ]);
         $this->markDone('database');
 
-        return redirect()->route(config('installer.admin.enabled') ? 'installer.admin' : 'installer.run');
+        return redirect($this->nextUrl('database'));
+    }
+
+    public function settings()
+    {
+        if (! Installer::settingsGroups()) {
+            return redirect($this->nextUrl('settings'));
+        }
+
+        if ($redirect = $this->guard('settings')) {
+            return $redirect;
+        }
+
+        $env = $this->env();
+        $saved = session('installer.settings', []);
+        $groups = [];
+        $values = [];
+
+        foreach (Installer::settingsGroups() as $name => $group) {
+            $fields = Installer::fields($group['fields'] ?? []);
+
+            foreach ($fields as $key => $field) {
+                $current = $env->get($key);
+                $current = in_array(strtolower((string) $current), ['null', '(null)'], true) ? '' : $current;
+
+                $values[$key] = $saved[$key] ?? $current ?? $field['default'] ?? '';
+            }
+
+            $groups[$name] = [
+                'title' => __($group['title'] ?? ucfirst($name)),
+                'description' => isset($group['description']) ? __($group['description']) : null,
+                'fields' => $fields,
+            ];
+        }
+
+        return view('installer::settings', [
+            'step' => 'settings',
+            'groups' => $groups,
+            'values' => $values,
+            'back' => $this->previousUrl('settings'),
+        ]);
+    }
+
+    public function saveSettings(Request $request): RedirectResponse
+    {
+        if ($redirect = $this->guard('settings')) {
+            return $redirect;
+        }
+
+        $fields = [];
+
+        foreach (Installer::settingsGroups() as $group) {
+            $fields += Installer::fields($group['fields'] ?? []);
+        }
+
+        $data = $this->validateFields($request, $fields);
+        $values = [];
+
+        foreach ($fields as $key => $field) {
+            $values[$key] = $field['type'] === 'boolean' ? $request->boolean($key) : (string) ($data[$key] ?? '');
+        }
+
+        if (! $this->env()->set($values)) {
+            return back()->withInput()->withErrors(['settings' => __('installer::installer.common.env_not_writable')]);
+        }
+
+        session(['installer.settings' => $values]);
+        $this->markDone('settings');
+
+        return redirect($this->nextUrl('settings'));
     }
 
     public function admin()
     {
         if (! config('installer.admin.enabled')) {
-            return redirect()->route('installer.run');
+            return redirect($this->nextUrl('admin'));
         }
 
-        if ($redirect = $this->guard('database')) {
+        if ($redirect = $this->guard('admin')) {
             return $redirect;
         }
 
-        $fields = $this->adminFields();
+        $fields = Installer::fields(config('installer.admin.fields', []));
         $saved = session('installer.admin', []);
         $values = [];
 
@@ -169,22 +291,18 @@ class InstallerController extends Controller
             'step' => 'admin',
             'fields' => $fields,
             'values' => $values,
+            'back' => $this->previousUrl('admin'),
         ]);
     }
 
     public function saveAdmin(Request $request): RedirectResponse
     {
-        if ($redirect = $this->guard('database')) {
+        if ($redirect = $this->guard('admin')) {
             return $redirect;
         }
 
-        $fields = $this->adminFields();
-
-        $data = $request->validate(
-            array_map(fn ($field) => $field['rules'] ?? 'nullable', $fields),
-            [],
-            array_map(fn ($field) => strtolower($field['label']), $fields),
-        );
+        $fields = Installer::fields(config('installer.admin.fields', []));
+        $data = $this->validateFields($request, $fields);
 
         foreach ($fields as $key => $field) {
             if ($field['type'] === 'password' && isset($data[$key]) && $data[$key] !== '') {
@@ -200,20 +318,21 @@ class InstallerController extends Controller
 
     public function run()
     {
-        if ($redirect = $this->guard(config('installer.admin.enabled') ? 'admin' : 'database')) {
+        if ($redirect = $this->guard('run')) {
             return $redirect;
         }
 
         return view('installer::run', [
             'step' => 'run',
             'tasks' => $this->tasks(),
+            'back' => $this->previousUrl('run'),
         ]);
     }
 
     public function runTask(string $task): JsonResponse
     {
-        if ($this->guard(config('installer.admin.enabled') ? 'admin' : 'database')) {
-            return response()->json(['status' => 'error', 'message' => 'Please complete the previous steps first.'], 422);
+        if ($this->guard('run')) {
+            return response()->json(['status' => 'error', 'message' => __('installer::installer.common.previous_steps')], 422);
         }
 
         abort_unless(array_key_exists($task, $this->tasks()), 404);
@@ -244,16 +363,18 @@ class InstallerController extends Controller
 
     protected function tasks(): array
     {
+        $t = fn (string $key, array $replace = []) => __('installer::installer.tasks.'.$key, $replace);
+
         return array_filter([
-            'environment' => 'Writing environment configuration',
-            'key' => 'Generating application key',
-            'migrate' => config('installer.migrate') ? 'Running database migrations' : null,
-            'seed' => config('installer.seed') ? 'Seeding the database' : null,
-            'storage' => config('installer.storage_link') ? 'Creating storage link' : null,
-            'admin' => config('installer.admin.enabled') ? 'Creating '.strtolower(config('installer.admin.title', 'Administrator Account')) : null,
-            'commands' => config('installer.commands') ? 'Running post-install commands' : null,
-            'optimize' => 'Clearing caches',
-            'finish' => 'Finishing installation',
+            'environment' => $t('environment'),
+            'key' => $t('key'),
+            'migrate' => config('installer.migrate') ? $t('migrate') : null,
+            'seed' => config('installer.seed') ? $t('seed') : null,
+            'storage' => config('installer.storage_link') ? $t('storage') : null,
+            'admin' => config('installer.admin.enabled') ? $t('admin', ['title' => mb_strtolower($this->adminTitle())]) : null,
+            'commands' => config('installer.commands') ? $t('commands') : null,
+            'optimize' => $t('optimize'),
+            'finish' => $t('finish'),
         ]);
     }
 
@@ -262,10 +383,13 @@ class InstallerController extends Controller
         $values = session('installer.app', ['APP_ENV' => 'production', 'APP_DEBUG' => false]);
 
         if (! $this->env()->set($values)) {
-            return ['error', 'Could not write the .env file.'];
+            return ['error', __('installer::installer.common.env_not_writable')];
         }
 
-        return ['ok', 'APP_ENV='.$values['APP_ENV'].', APP_DEBUG='.($values['APP_DEBUG'] ? 'true' : 'false')];
+        return ['ok', $this->message('env_set', [
+            'env' => $values['APP_ENV'],
+            'debug' => $values['APP_DEBUG'] ? 'true' : 'false',
+        ])];
     }
 
     protected function taskKey(): array
@@ -276,17 +400,17 @@ class InstallerController extends Controller
         if (empty($this->env()->get('APP_KEY'))) {
             Artisan::call('key:generate', ['--force' => true]);
 
-            return ['ok', 'New application key generated.', Artisan::output()];
+            return ['ok', $this->message('key_generated'), Artisan::output()];
         }
 
-        return ['ok', 'Application key is set.'];
+        return ['ok', $this->message('key_set')];
     }
 
     protected function taskMigrate(): array
     {
         Artisan::call('migrate', ['--force' => true]);
 
-        return ['ok', 'Migrations completed.', Artisan::output()];
+        return ['ok', $this->message('migrated'), Artisan::output()];
     }
 
     protected function taskSeed(): array
@@ -299,25 +423,25 @@ class InstallerController extends Controller
 
         Artisan::call('db:seed', $params);
 
-        return ['ok', 'Database seeded.', Artisan::output()];
+        return ['ok', $this->message('seeded'), Artisan::output()];
     }
 
     protected function taskStorage(): array
     {
         if (file_exists(public_path('storage')) || is_link(public_path('storage'))) {
-            return ['ok', 'public/storage already exists.'];
+            return ['ok', $this->message('storage_exists')];
         }
 
         if (! function_exists('symlink')) {
-            return ['warning', 'symlink() is disabled on this server. Create the public/storage link manually.'];
+            return ['warning', $this->message('symlink_disabled')];
         }
 
         try {
             Artisan::call('storage:link');
 
-            return ['ok', 'Storage link created.', Artisan::output()];
+            return ['ok', $this->message('storage_linked'), Artisan::output()];
         } catch (Throwable $e) {
-            return ['warning', 'Could not create storage link: '.$e->getMessage()];
+            return ['warning', $this->message('storage_failed', ['error' => $e->getMessage()])];
         }
     }
 
@@ -326,12 +450,12 @@ class InstallerController extends Controller
         $data = session('installer.admin');
 
         if (! $data) {
-            return ['error', 'Administrator data is missing, please go back to the admin step.'];
+            return ['error', __('installer::installer.admin.missing')];
         }
 
         $attributes = [];
 
-        foreach ($this->adminFields() as $key => $field) {
+        foreach (Installer::fields(config('installer.admin.fields', [])) as $key => $field) {
             $column = $field['column'] ?? $key;
 
             if ($column !== false && array_key_exists($key, $data)) {
@@ -343,7 +467,7 @@ class InstallerController extends Controller
         $identifier = config('installer.admin.identifier', 'email');
 
         if (! isset($attributes[$identifier])) {
-            return ['error', "Admin identifier column [{$identifier}] is not one of the admin fields."];
+            return ['error', __('installer::installer.admin.identifier_missing', ['column' => $identifier])];
         }
 
         $modelClass = config('installer.admin.model');
@@ -363,7 +487,10 @@ class InstallerController extends Controller
             app($callback)($user, $data);
         }
 
-        return ['ok', config('installer.admin.title', 'Administrator').' '.$attributes[$identifier].' is ready.'];
+        return ['ok', __('installer::installer.admin.ready', [
+            'title' => $this->adminTitle(),
+            'id' => $attributes[$identifier],
+        ])];
     }
 
     protected function taskCommands(): array
@@ -379,7 +506,7 @@ class InstallerController extends Controller
             $output .= '> '.$command.PHP_EOL.Artisan::output().PHP_EOL;
         }
 
-        return ['ok', 'Post-install commands completed.', $output];
+        return ['ok', $this->message('commands_done'), $output];
     }
 
     protected function taskOptimize(): array
@@ -387,32 +514,33 @@ class InstallerController extends Controller
         try {
             Artisan::call('optimize:clear');
 
-            return ['ok', 'Caches cleared.', Artisan::output()];
+            return ['ok', $this->message('caches_cleared'), Artisan::output()];
         } catch (Throwable $e) {
-            return ['warning', 'Could not clear all caches: '.$e->getMessage()];
+            return ['warning', $this->message('caches_failed', ['error' => $e->getMessage()])];
         }
     }
 
     protected function taskFinish(): array
     {
         if (! Installer::markInstalled()) {
-            return ['error', 'Could not write the lock file '.Installer::lockPath()];
+            return ['error', $this->message('lock_failed', ['path' => Installer::lockPath()])];
         }
 
         session()->forget('installer');
 
-        return ['ok', 'Installation completed.'];
+        return ['ok', $this->message('completed')];
     }
 
     /* ---------------------------------------------------------------------
      | Helpers
      * ------------------------------------------------------------------- */
 
-    protected function databaseRules(Request $request): array
+    protected function validateDatabase(Request $request, array $extra = []): array
     {
         $sqlite = $request->input('connection') === 'sqlite';
+        $t = fn (string $key) => mb_strtolower(__('installer::installer.database.'.$key));
 
-        return [
+        return $request->validate(array_merge([
             'connection' => ['required', Rule::in(array_keys(config('installer.database_drivers')))],
             'host' => [$sqlite ? 'nullable' : 'required', 'string', 'max:255'],
             'port' => [$sqlite ? 'nullable' : 'required', 'numeric'],
@@ -420,7 +548,44 @@ class InstallerController extends Controller
             'username' => [$sqlite ? 'nullable' : 'required', 'string', 'max:255'],
             'password' => ['nullable', 'string', 'max:255'],
             'sqlite_path' => [$sqlite ? 'required' : 'nullable', 'string', 'max:500'],
-        ];
+        ], $extra), $this->validationMessages(), [
+            'connection' => $t('type'),
+            'host' => $t('host'),
+            'port' => $t('port'),
+            'database' => $t('name'),
+            'username' => $t('username'),
+            'password' => $t('password'),
+            'sqlite_path' => $t('sqlite_path'),
+            'app_name' => $t('app_name'),
+            'app_url' => $t('app_url'),
+            'app_env' => $t('environment'),
+        ]);
+    }
+
+    protected function validateFields(Request $request, array $fields): array
+    {
+        return $request->validate(
+            array_map(fn ($field) => $field['type'] === 'boolean' ? ['nullable', 'boolean'] : $field['rules'], $fields),
+            $this->validationMessages(),
+            array_map(fn ($field) => mb_strtolower($field['label']), $fields),
+        );
+    }
+
+    /**
+     * Bundled validation messages for the current locale, used only when the
+     * application has no translations of its own for that locale.
+     */
+    protected function validationMessages(): array
+    {
+        $locale = app()->getLocale();
+
+        if (Lang::hasForLocale('validation.required', $locale)) {
+            return [];
+        }
+
+        $messages = __('installer::validation', [], $locale);
+
+        return is_array($messages) ? $messages : [];
     }
 
     protected function normalizeDatabase(array $input): array
@@ -439,19 +604,14 @@ class InstallerController extends Controller
         ];
     }
 
-    protected function adminFields(): array
+    protected function adminTitle(): string
     {
-        $fields = [];
+        return __(config('installer.admin.title') ?: 'installer::installer.admin.title');
+    }
 
-        foreach (config('installer.admin.fields', []) as $key => $field) {
-            $fields[$key] = array_merge([
-                'label' => ucwords(str_replace('_', ' ', $key)),
-                'type' => 'text',
-                'rules' => 'nullable',
-            ], $field);
-        }
-
-        return $fields;
+    protected function message(string $key, array $replace = []): string
+    {
+        return __('installer::installer.messages.'.$key, $replace);
     }
 
     protected function env(): EnvironmentManager
@@ -467,23 +627,57 @@ class InstallerController extends Controller
     }
 
     /**
-     * Redirect back to the first unfinished step before $required.
+     * Redirect to the first unfinished step that comes before $step.
      */
-    protected function guard(string $required): ?RedirectResponse
+    protected function guard(string $step): ?RedirectResponse
     {
-        $order = ['requirements', 'permissions', 'database', 'admin'];
         $done = session('installer.done', []);
 
-        foreach (array_slice($order, 0, array_search($required, $order) + 1) as $step) {
-            if ($step === 'admin' && ! config('installer.admin.enabled')) {
-                continue;
+        foreach (Installer::steps() as $required) {
+            if ($required === $step) {
+                break;
             }
 
-            if (empty($done[$step])) {
-                return redirect()->route('installer.'.$step);
+            if (empty($done[$required])) {
+                return redirect($this->stepUrl($required));
             }
         }
 
         return null;
+    }
+
+    protected function stepUrl(string $step): string
+    {
+        return route($step === 'access' ? 'installer.welcome' : 'installer.'.$step);
+    }
+
+    protected function nextUrl(string $step): string
+    {
+        $steps = Installer::steps();
+        $index = array_search($step, $steps, true);
+        $next = $index === false ? null : ($steps[$index + 1] ?? null);
+
+        // A step that is switched off: find where it would sit in the full order.
+        if ($index === false) {
+            $order = ['access', 'requirements', 'permissions', 'database', 'settings', 'admin'];
+
+            foreach (array_slice($order, array_search($step, $order) + 1) as $candidate) {
+                if (in_array($candidate, $steps, true)) {
+                    $next = $candidate;
+                    break;
+                }
+            }
+        }
+
+        return $next ? $this->stepUrl($next) : route('installer.run');
+    }
+
+    protected function previousUrl(string $step): string
+    {
+        $steps = Installer::steps();
+        $index = $step === 'run' ? count($steps) : array_search($step, $steps, true);
+        $previous = $index ? ($steps[$index - 1] ?? null) : null;
+
+        return $previous ? $this->stepUrl($previous) : route('installer.welcome');
     }
 }

@@ -2,14 +2,14 @@
 
 @section('content')
     <div id="installing">
-        <h2>Install</h2>
-        <p class="intro">Everything is ready. Click <strong>Install Now</strong> and keep this page open until it finishes.</p>
+        <h2>{{ __('installer::installer.run.title') }}</h2>
+        <p class="intro">{{ __('installer::installer.run.intro') }}</p>
 
         <div class="list" id="tasks">
             @foreach ($tasks as $key => $label)
                 <div class="row" data-task="{{ $key }}">
                     <span>{{ $label }}<br><small class="hint" data-message></small></span>
-                    <span class="badge" data-badge style="background:#eef0f5;color:#6b7280">Pending</span>
+                    <span class="badge" data-badge style="background:#eef0f5;color:#6b7280">{{ __('installer::installer.run.pending') }}</span>
                 </div>
             @endforeach
         </div>
@@ -17,19 +17,19 @@
         <pre class="log" id="log" style="display:none"></pre>
 
         <div class="actions">
-            <a href="{{ config('installer.admin.enabled') ? route('installer.admin') : route('installer.database') }}" class="btn secondary" id="btn-back">&larr; Back</a>
-            <button type="button" class="btn" id="btn-install">Install Now</button>
+            <a href="{{ $back }}" class="btn secondary" id="btn-back">&larr; {{ __('installer::installer.common.back') }}</a>
+            <button type="button" class="btn" id="btn-install">{{ __('installer::installer.run.install_now') }}</button>
         </div>
     </div>
 
     <div id="finished" style="display:none; text-align:center; padding: 20px 0">
         <div style="font-size:52px; color:var(--ok); line-height:1">&#10004;</div>
-        <h2 style="margin-top:12px">Installation Complete!</h2>
-        <p class="intro">{{ config('app.name', 'Laravel') }} has been installed successfully. The installer is now locked.</p>
+        <h2 style="margin-top:12px">{{ __('installer::installer.run.complete_title') }}</h2>
+        <p class="intro">{{ __('installer::installer.run.complete_intro', ['app' => config('app.name', 'Laravel')]) }}</p>
         <div id="warnings"></div>
         <div class="actions" style="justify-content:center">
-            <a href="#" class="btn secondary" id="btn-login" style="display:none">Admin Login</a>
-            <a href="#" class="btn" id="btn-home">Go to Website &rarr;</a>
+            <a href="#" class="btn secondary" id="btn-login" style="display:none">{{ __('installer::installer.run.admin_login') }}</a>
+            <a href="#" class="btn" id="btn-home">{{ __('installer::installer.run.go_website') }} &rarr;</a>
         </div>
     </div>
 @endsection
@@ -44,12 +44,13 @@
     var back = document.getElementById('btn-back');
     var log = document.getElementById('log');
     var warnings = [];
+    var i18n = @json(__('installer::installer.run'));
 
     var styles = {
-        running: ['Running...', '#eef2ff', '#4f46e5'],
-        ok: ['Done', '#ecfdf3', '#16a34a'],
-        warning: ['Warning', '#fffbeb', '#d97706'],
-        error: ['Failed', '#fef2f2', '#dc2626']
+        running: [i18n.running, '#eef2ff', '#4f46e5'],
+        ok: [i18n.done, '#ecfdf3', '#16a34a'],
+        warning: [i18n.warning, '#fffbeb', '#d97706'],
+        error: [i18n.failed, '#fef2f2', '#dc2626']
     };
 
     function setState(task, state, message) {
@@ -100,7 +101,7 @@
         .then(function (res) {
             return res.text().then(function (text) {
                 try { return JSON.parse(text); }
-                catch (e) { return { status: 'error', message: 'Server error (HTTP ' + res.status + '). Check storage/logs/laravel.log.' }; }
+                catch (e) { return { status: 'error', message: i18n.server_error.replace(':status', res.status) }; }
             });
         })
         .then(function (data) {
@@ -109,7 +110,7 @@
 
             if (data.status === 'error') {
                 btn.disabled = false;
-                btn.textContent = 'Retry';
+                btn.textContent = i18n.retry;
                 btn.dataset.from = index;
                 back.classList.remove('disabled');
                 return;
@@ -119,9 +120,9 @@
             run(index + 1);
         })
         .catch(function (e) {
-            setState(task, 'error', 'Request failed: ' + e.message);
+            setState(task, 'error', i18n.request_failed.replace(':error', e.message));
             btn.disabled = false;
-            btn.textContent = 'Retry';
+            btn.textContent = i18n.retry;
             btn.dataset.from = index;
             back.classList.remove('disabled');
         });
@@ -129,7 +130,7 @@
 
     btn.addEventListener('click', function () {
         btn.disabled = true;
-        btn.textContent = 'Installing...';
+        btn.textContent = i18n.installing;
         back.classList.add('disabled');
         run(parseInt(btn.dataset.from || '0', 10));
     });

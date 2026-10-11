@@ -9,15 +9,15 @@ class ServerChecker
         $minPhp = config('installer.requirements.php', '8.1.0');
 
         $items = [[
-            'label' => 'PHP >= '.$minPhp,
+            'label' => __('installer::installer.requirements.php', ['version' => $minPhp]),
             'current' => PHP_VERSION,
             'ok' => version_compare(PHP_VERSION, $minPhp, '>='),
         ]];
 
         foreach (config('installer.requirements.extensions', []) as $extension) {
             $items[] = [
-                'label' => strtoupper($extension).' extension',
-                'current' => extension_loaded($extension) ? 'Enabled' : 'Missing',
+                'label' => __('installer::installer.requirements.extension', ['name' => strtoupper($extension)]),
+                'current' => __(extension_loaded($extension) ? 'installer::installer.common.enabled' : 'installer::installer.common.missing'),
                 'ok' => extension_loaded($extension),
             ];
         }
@@ -37,7 +37,7 @@ class ServerChecker
 
             $items[] = [
                 'label' => $path,
-                'current' => file_exists($full) ? substr(sprintf('%o', fileperms($full)), -3) : 'not found',
+                'current' => file_exists($full) ? substr(sprintf('%o', fileperms($full)), -3) : __('installer::installer.common.not_found'),
                 'ok' => $ok,
             ];
         }
